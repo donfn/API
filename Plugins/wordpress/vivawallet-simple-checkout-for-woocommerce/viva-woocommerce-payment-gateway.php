@@ -69,6 +69,11 @@ function woocommerce_VivaPayments_init()
 			} else {
 				$this->requesturl = 'https://www.vivapayments.com';
 			}
+			if($this->VivaPaymentsDisableWallet == 'yes'){
+				$this->VivaPaymentsDisableWallet = 'true';
+			}else{
+				$this->VivaPaymentsDisableWallet = 'false';
+			}
 				
             //Actions
             add_action('woocommerce_receipt_simplecheckout_vivapayments_gateway', array($this, 'receipt_page'));
@@ -83,12 +88,31 @@ function woocommerce_VivaPayments_init()
          * */
         public function admin_options()
         {
-            echo '<h3>' . __('Viva Payments | Simple Checkout', 'viva-woocommerce-payment-gateway') . '</h3>';
-            echo '<p>' . __('Your Public Key, Merchant ID and API Key, can be found in your Viva Wallet Dashboard, under Settings > API Access. <br>Also, you can change the logo that appears in the top of the pop-up, under Sales > Online Payments > Website / Apps > Default.', 'viva-woocommerce-payment-gateway') . '</p>';
-
-            echo '<table class="form-table">';
+            echo '<h3>' . __('<img src="https://camo.githubusercontent.com/632c49480ddf711ac664022ea99cc1daba6a0636/68747470733a2f2f6c616e64696e672e7669766177616c6c65742e636f6d2f68732d66732f68756266732f5669766125323057616c6c65742d6a756c792d323031382d312e706e67" width="50px" height="auto"> | Simple Checkout', 'viva-woocommerce-payment-gateway') . '</h3>';
+            echo '<p>' . __('Your Public Key, Merchant ID and API Key, can be found in your Viva Wallet Dashboard, under Settings > API Access. <br>Also, you can change the logo that appears in the top of the pop-up, under Sales > Online Payments > Website / Apps > Default.', 'viva-woocommerce-payment-gateway') . '</p><br>';
+			echo '<table class="form-table">';
             $this->generate_settings_html();
             echo '</table>';
+			echo '<p>________________________________________<br><br>This a preview of the payment button and pop-up: <br>
+                        <br> <button type="button" id="SimpleCheckoutButton"
+                             data-vp-publickey="'.$this->VivaPaymentsPublicKey.'"
+                             data-vp-baseurl="'.$this->requesturl.'"
+                             data-vp-lang="'.$this->VivaPaymentsLanguage.'"
+                             data-vp-expandcard="true"
+                             data-vp-amount="100"
+							 data-vp-sourcecode="Default"
+							 data-vp-preauth="'.$this->VivaPaymentsTransactionType.'"
+                             data-vp-merchantref="Admin Panel Test Charge"
+							 data-vp-disablewallet="'.$this->VivaPaymentsDisableWallet.'"
+                             data-vp-description="'.$this->VivaPaymentsDescription.'">
+                         </button>
+						 <br>________________________________________
+					<script>
+					$ = jQuery;
+					</script>
+                    ';
+			wp_enqueue_script('simplecheckout.js', $this->requesturl.'/web/checkout/js#asyncload', array('jquery'));
+
         }
 
         /**
@@ -230,19 +254,15 @@ function woocommerce_VivaPayments_init()
             global $woocommerce;
 
             $order = new WC_Order($order_id);
-
+			$result = '<br>';
 
             $PublicKey = $this->VivaPaymentsPublicKey;
-            if($PublicKey === null){ return '<b> ERROR: THE PUBLIC KEY IS NOT SET. CHECK THE PLUGIN SETTINGS!</b>' ;}
+            if($PublicKey === null) return '<b> ERROR: THE PUBLIC KEY IS NOT SET. CHECK THE PLUGIN SETTINGS!</b>' ;
             
             $Amount = $order->get_total() * 100; // Amount in cents
 			
-			if($this->VivaPaymentsDisableWallet == 'yes'){
-				$this->VivaPaymentsDisableWallet = 'true';
-			}else{
-				$this->VivaPaymentsDisableWallet = 'false';
-			}
-            return '<br><p><form id="" action="" method="post" onLoad="alert("ok");">
+
+			$result .= '<p><form id="" action="" method="post">
                          <button type="button" id="SimpleCheckoutButton"
                              data-vp-publickey="'.$PublicKey.'"
                              data-vp-baseurl="'.$this->requesturl.'"
@@ -265,6 +285,8 @@ function woocommerce_VivaPayments_init()
 					};
 					</script>
                     ';
+					
+				return $result;
 
         }
 
@@ -304,7 +326,6 @@ function woocommerce_VivaPayments_init()
                     curl_setopt($session, CURLOPT_USERPWD, htmlspecialchars_decode($MerchantId) . ':' . htmlspecialchars_decode($APIKey));
                     $response = curl_exec($session);
                     curl_close($session);
-					print_r($response);
                     try {
                         if (is_object(json_decode($response))) {
                             $resultObj = json_decode($response);
@@ -361,36 +382,27 @@ function woocommerce_VivaPayments_init()
 
                                 // Empty cart
                                 WC()->cart->empty_cart();
+							  if ( $order ) {
+								$return_url = $order->get_checkout_order_received_url();
+							} else {
+								$return_url = wc_get_endpoint_url( 'order-received', '', wc_get_page_permalink( 'checkout' ) );
+							}
+              
+								wp_redirect($return_url);
                             }
                         } else {
-
-                            $message = __('Payment Failure: An error occured during processing.', 'viva-woocommerce-payment-gateway');
-                            $message_type = 'error';
-
-
-                            //Add Customer Order Note
-                            $order->add_order_note($message . '<br />Viva Payments Transaction Reference: ' . $trans_id, 1);
-
-                            //Update the order status
-                            $order->update_status('failed', '');
-
-                            $VivaPayments_message = array(
-                                'message' => $message,
-                                'message_type' => $message_type,
-                            );
-
-                            $this->generic_add_meta($orderid, '_simplecheckout_VivaPayments_message', $VivaPayments_message);
-                        }
+							 echo ("<script LANGUAGE='JavaScript'>
+									window.alert('Payment Failed');
+									history.back();
+									</script>");
+							}
                     }
-                }
-
-                if ( $order ) {
-                    $return_url = $order->get_checkout_order_received_url();
-                  } else {
-                    $return_url = wc_get_endpoint_url( 'order-received', '', wc_get_page_permalink( 'checkout' ) );
-                  }
-              
-                wp_redirect($return_url);
+                }else{
+							 echo ("<script LANGUAGE='JavaScript'>
+									window.alert('Payment Failed');
+									history.back();
+									</script>");
+				}
 
                 exit;
             }
@@ -401,7 +413,7 @@ function woocommerce_VivaPayments_init()
 				
                 echo $this->generate_VivaPayments_form($order_id);
 				wp_enqueue_script('simplecheckout.js', $this->requesturl.'/web/checkout/js#asyncload', array('jquery'));
-
+				
             }
         }
 
